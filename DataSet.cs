@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -20,31 +21,76 @@ namespace lab2_perceptron
 
         static readonly string[] Ext = { ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff" };
 
-        public static double[] ImageToVector(string path, int w, int h, bool invert)
+        static int Median(List<int> v)
+        {
+            v.Sort();
+            return v[v.Count / 2];
+        }
+
+        // Порог Оцу по гистограмме 0..255
+        static int Otsu(int[] hist, int total)
+        {
+            double sum = 0;
+            for (int i = 0; i < 256; i++) sum += i * (double)hist[i];
+            double sumB = 0, wB = 0, best = -1; int thr = 0;
+            for (int t = 0; t < 256; t++)
+            {
+                wB += hist[t];
+                if (wB == 0) continue;
+                double wF = total - wB;
+                if (wF == 0) break;
+                sumB += t * (double)hist[t];
+                double mB = sumB / wB, mF = (sum - sumB) / wF;
+                double between = wB * wF * (mB - mF) * (mB - mF);
+                if (between > best) { best = between; thr = t; }
+            }
+            return thr;
+        }
+
+        // Изображение -> вектор 0/1. Цвет фона = медиана пикселей по краю; 1 = пиксель, отличающийся от фона
+        // больше порога (автоматически Оцу или вручную). Белый и чёрный фон дают одинаковую маску.
+        public static double[] ImageToVector(string path, int w, int h, int manualThr)
         {
             using (Bitmap src = new Bitmap(path))
-            using (Bitmap bmp = new Bitmap(w, h))
+            using (Bitmap bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb))
             {
                 using (Graphics g = Graphics.FromImage(bmp))
                 {
-                    g.InterpolationMode = InterpolationMode.NearestNeighbor;
-                    g.PixelOffsetMode = PixelOffsetMode.Half;
+                    g.Clear(Color.White);
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    g.SmoothingMode = SmoothingMode.HighQuality;
                     g.DrawImage(src, new Rectangle(0, 0, w, h));
                 }
-                double[] v = new double[w * h];
+                int n = w * h;
+                int[] R = new int[n], G = new int[n], B = new int[n];
+                List<int> br = new List<int>(), bg = new List<int>(), bb = new List<int>();
                 for (int y = 0; y < h; y++)
                     for (int x = 0; x < w; x++)
                     {
                         Color c = bmp.GetPixel(x, y);
-                        int gray = (int)(0.299 * c.R + 0.587 * c.G + 0.114 * c.B);
-                        bool on = invert ? gray < 255 : gray != 0;
-                        v[y * w + x] = on ? 1.0 : 0.0;
+                        int i = y * w + x;
+                        R[i] = c.R; G[i] = c.G; B[i] = c.B;
+                        if (x == 0 || y == 0 || x == w - 1 || y == h - 1) { br.Add(c.R); bg.Add(c.G); bb.Add(c.B); }
                     }
-                return v;
+                int mr = Median(br), mg = Median(bg), mb = Median(bb);
+                int[] d = new int[n];
+                int[] hist = new int[256];
+                for (int i = 0; i < n; i++)
+                {
+                    double dr = R[i] - mr, dg = G[i] - mg, db = B[i] - mb;
+                    int v = (int)Math.Round(Math.Sqrt((dr * dr + dg * dg + db * db) / 3.0));
+                    if (v > 255) v = 255;
+                    d[i] = v; hist[v]++;
+                }
+                int thr = manualThr > 0 ? Math.Min(manualThr, 254) : Math.Max(25, Otsu(hist, n));
+                double[] res = new double[n];
+                for (int i = 0; i < n; i++) res[i] = d[i] > thr ? 1.0 : 0.0;
+                return res;
             }
         }
 
-        public static DataSet LoadFolder(string root, int w, int h, bool invert)
+        public static DataSet LoadFolder(string root, int w, int h, int manualThr)
         {
             List<double[]> xs = new List<double[]>();
             List<int> ys = new List<int>();
@@ -57,7 +103,7 @@ namespace lab2_perceptron
                 {
                     if (!Ext.Contains(Path.GetExtension(f).ToLowerInvariant())) continue;
                     if (idx < 0) { ds.Names.Add(cls); idx = ds.Names.Count - 1; }
-                    xs.Add(ImageToVector(f, w, h, invert));
+                    xs.Add(ImageToVector(f, w, h, manualThr));
                     ys.Add(idx);
                 }
             }

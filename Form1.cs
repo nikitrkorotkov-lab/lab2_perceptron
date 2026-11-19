@@ -18,7 +18,7 @@ namespace lab2_perceptron
         LossForm lossForm;
         Random rnd = new Random(1);
 
-        Label lblInfo; TextBox tbW, tbH, log; CheckBox chkInvert; ProgressBar pb;
+        Label lblInfo; TextBox tbW, tbH, tbThr, log; ProgressBar pb;
         ComboBox cbClass, cbAct;
         TextBox nEta, nEp, lEta, lEp, mEta, mEp, mHid;
         PictureBox pbN, pbL, pbM; Label resN, resL, resM;
@@ -48,9 +48,9 @@ namespace lab2_perceptron
             Btn(top, "Загрузить CSV...", 185, 20, 120, OpenCsv);
             Btn(top, "Сохранить датасет в CSV", 310, 20, 160, SaveCsv);
             Lbl(top, "Размер (Ш x В):", 490, 20);
-            tbW = Tb(top, "20", 585, 20, 35); tbH = Tb(top, "20", 625, 20, 35);
-            chkInvert = new CheckBox { Text = "Инверсия (тёмный объект на светлом фоне)", Left = 680, Top = 22, AutoSize = true };
-            top.Controls.Add(chkInvert);
+            tbW = Tb(top, "32", 585, 20, 35); tbH = Tb(top, "32", 625, 20, 35);
+            Lbl(top, "Порог (0 = авто, версия Оцу):", 680, 20);
+            tbThr = Tb(top, "0", 865, 20, 40);
             Btn(top, "Создать файл случайных весов...", 10, 55, 210, MakeWeights);
             Btn(top, "Загрузить файл весов...", 225, 55, 170, PickWeights);
             lblInfo = new Label { Text = "Датасет не загружен", Left = 405, Top = 60, AutoSize = true };
@@ -64,23 +64,23 @@ namespace lab2_perceptron
             Lbl(t1, "Распознаваемый класс:", 10, 15);
             cbClass = new ComboBox { Left = 160, Top = 12, Width = 150, DropDownStyle = ComboBoxStyle.DropDownList }; t1.Controls.Add(cbClass);
             Lbl(t1, "Скорость обучения:", 10, 50); nEta = Tb(t1, "0.1", 160, 47, 60);
-            Lbl(t1, "Эпох:", 240, 50); nEp = Tb(t1, "50", 290, 47, 60);
+            Lbl(t1, "Эпох:", 240, 50); nEp = Tb(t1, "100", 290, 47, 60);
             Btn(t1, "Обучить нейрон (правило Хебба)", 10, 85, 220, TrainNeuron);
             Btn(t1, "Проверить изображение...", 240, 85, 180, CheckNeuron);
             resN = new Label { Left = 10, Top = 130, AutoSize = true, Font = new Font("Arial", 14, FontStyle.Bold) }; t1.Controls.Add(resN);
             pbN = Pic(t1, 600, 10);
 
             Lbl(t2, "Скорость обучения:", 10, 15); lEta = Tb(t2, "0.1", 160, 12, 60);
-            Lbl(t2, "Эпох:", 240, 15); lEp = Tb(t2, "50", 290, 12, 60);
+            Lbl(t2, "Эпох:", 240, 15); lEp = Tb(t2, "100", 290, 12, 60);
             Btn(t2, "Обучить слой нейронов", 10, 50, 200, TrainLayer);
             Btn(t2, "Распознать изображение...", 220, 50, 190, (s, e) => CheckNet(false));
             Btn(t2, "Сохранить веса...", 420, 50, 140, SaveLayerWeights);
             resL = new Label { Left = 10, Top = 100, AutoSize = true, Font = new Font("Arial", 14, FontStyle.Bold) }; t2.Controls.Add(resL);
             pbL = Pic(t2, 600, 10);
 
-            Lbl(t3, "Скорость обучения:", 10, 15); mEta = Tb(t3, "0.1", 160, 12, 60);
-            Lbl(t3, "Эпох:", 240, 15); mEp = Tb(t3, "300", 290, 12, 60);
-            Lbl(t3, "Нейронов в скрытом слое:", 10, 50); mHid = Tb(t3, "64", 190, 47, 60);
+            Lbl(t3, "Скорость обучения:", 10, 15); mEta = Tb(t3, "0.05", 160, 12, 60);
+            Lbl(t3, "Эпох:", 240, 15); mEp = Tb(t3, "200", 290, 12, 60);
+            Lbl(t3, "Нейронов в скрытом слое:", 10, 50); mHid = Tb(t3, "128", 190, 47, 60);
             Lbl(t3, "Активация:", 270, 50);
             cbAct = new ComboBox { Left = 345, Top = 47, Width = 80, DropDownStyle = ComboBoxStyle.DropDownList };
             cbAct.Items.AddRange(new object[] { "tanh", "relu", "sigmoid" }); cbAct.SelectedIndex = 0; t3.Controls.Add(cbAct);
@@ -102,6 +102,12 @@ namespace lab2_perceptron
         void Log(string s) { log.AppendText(s + "\r\n"); }
         static double D(TextBox t) { return double.Parse(t.Text.Trim().Replace(',', '.'), CultureInfo.InvariantCulture); }
         static int I(TextBox t) { return int.Parse(t.Text.Trim()); }
+
+        int Thr()
+        {
+            int v;
+            return int.TryParse(tbThr.Text.Trim(), out v) && v > 0 ? v : 0;
+        }
 
         bool NeedData()
         {
@@ -128,7 +134,7 @@ namespace lab2_perceptron
             using (FolderBrowserDialog d = new FolderBrowserDialog { Description = "Папка датасета (каждая подпапка - класс)" })
             {
                 if (d.ShowDialog() != DialogResult.OK) return;
-                try { Cursor = Cursors.WaitCursor; SetData(DataSet.LoadFolder(d.SelectedPath, I(tbW), I(tbH), chkInvert.Checked)); }
+                try { Cursor = Cursors.WaitCursor; SetData(DataSet.LoadFolder(d.SelectedPath, I(tbW), I(tbH), Thr())); }
                 catch (Exception ex) { Fail(ex); }
                 finally { Cursor = Cursors.Default; }
             }
@@ -210,7 +216,7 @@ namespace lab2_perceptron
             using (OpenFileDialog d = new OpenFileDialog { Filter = "Изображения|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif" })
             {
                 if (d.ShowDialog() != DialogResult.OK) return null;
-                return DataSet.ImageToVector(d.FileName, ds.Width, ds.Height, chkInvert.Checked);
+                return DataSet.ImageToVector(d.FileName, ds.Width, ds.Height, Thr());
             }
         }
 

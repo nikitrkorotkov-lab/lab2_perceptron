@@ -5,6 +5,7 @@ using System.Linq;
 namespace lab2_perceptron
 {
     // Нейрон Розенблатта: y = step(w*x + b). Правило Хебба: dw = eta * x * t, t in {-1,+1} (при ошибке).
+    // Для линейно несепарабельных данных используется pocket-стратегия: в конце возвращаются лучшие веса эпохи.
     public class Perceptron
     {
         public double[] W; public double B;
@@ -31,6 +32,8 @@ namespace lab2_perceptron
         {
             History.Clear();
             int n = X.Length;
+            double bestLoss = double.MaxValue, bestB = B;
+            double[] bestW = (double[])W.Clone();
             for (int ep = 1; ep <= epochs; ep++)
             {
                 foreach (int i in Enumerable.Range(0, n).OrderBy(_ => rnd.Next()).ToArray())
@@ -47,13 +50,15 @@ namespace lab2_perceptron
                 for (int i = 0; i < n; i++) { double d = t01[i] - Predict(X[i]); loss += d * d; }
                 loss /= n;
                 History.Add(loss);
+                if (loss <= bestLoss) { bestLoss = loss; bestB = B; Array.Copy(W, bestW, W.Length); }
                 if (cb != null) cb(ep, loss);
                 if (loss == 0) break;
             }
+            Array.Copy(bestW, W, W.Length); B = bestB;
         }
     }
 
-    // Однослойная сеть: по одному нейрону на класс, решение - argmax.
+    // Однослойная сеть: по одному нейрону на класс, решение - argmax. Pocket: остаются веса эпохи с минимальной ошибкой распознавания.
     public class SingleLayerNet
     {
         public double[][] W; public double[] B; public int K, N;
@@ -92,6 +97,9 @@ namespace lab2_perceptron
         {
             History.Clear();
             int n = X.Length;
+            double bestErr = double.MaxValue;
+            double[][] bestW = new double[K][]; double[] bestB = new double[K];
+            for (int k = 0; k < K; k++) bestW[k] = new double[N];
             for (int ep = 1; ep <= epochs; ep++)
             {
                 foreach (int i in Enumerable.Range(0, n).OrderBy(_ => rnd.Next()).ToArray())
@@ -113,10 +121,18 @@ namespace lab2_perceptron
                         loss += d * d;
                     }
                 loss /= (n * K);
+                int wrong = 0;
+                for (int i = 0; i < n; i++) if (Predict(X[i]) != y[i]) wrong++;
                 History.Add(loss);
+                if (wrong <= bestErr)
+                {
+                    bestErr = wrong;
+                    for (int k = 0; k < K; k++) { Array.Copy(W[k], bestW[k], N); bestB[k] = B[k]; }
+                }
                 if (cb != null) cb(ep, loss);
                 if (loss == 0) break;
             }
+            for (int k = 0; k < K; k++) { Array.Copy(bestW[k], W[k], N); B[k] = bestB[k]; }
         }
 
         public double[][] Weights()
@@ -125,7 +141,7 @@ namespace lab2_perceptron
         }
     }
 
-    // Многослойный персептрон: вход -> скрытый слой -> softmax; backprop + мини-батч SGD, loss = cross-entropy.
+    // Многослойный персептрон: вход -> скрытый слой -> softmax; backprop + мини-батч SGD с momentum, loss = cross-entropy.
     public class Mlp
     {
         int nIn, nH, nOut; string act;
@@ -193,10 +209,13 @@ namespace lab2_perceptron
         public void Fit(double[][] X, int[] y, int epochs, double lr, int batch, Action<int, double> cb, Random rnd)
         {
             History.Clear();
+            const double mom = 0.9;
             int n = X.Length;
             double[] z1 = new double[nH], a1 = new double[nH], p = new double[nOut], d1 = new double[nH], d2 = new double[nOut];
             double[,] gW1 = new double[nIn, nH], gW2 = new double[nH, nOut];
             double[] gb1 = new double[nH], gb2 = new double[nOut];
+            double[,] vW1 = new double[nIn, nH], vW2 = new double[nH, nOut];
+            double[] vb1 = new double[nH], vb2 = new double[nOut];
             for (int ep = 1; ep <= epochs; ep++)
             {
                 int[] order = Enumerable.Range(0, n).OrderBy(_ => rnd.Next()).ToArray();
@@ -225,9 +244,14 @@ namespace lab2_perceptron
                         }
                     }
                     double sc = lr / (e - s);
-                    for (int j = 0; j < nIn; j++) for (int h = 0; h < nH; h++) W1[j, h] -= sc * gW1[j, h];
-                    for (int h = 0; h < nH; h++) { b1[h] -= sc * gb1[h]; for (int k = 0; k < nOut; k++) W2[h, k] -= sc * gW2[h, k]; }
-                    for (int k = 0; k < nOut; k++) b2[k] -= sc * gb2[k];
+                    for (int j = 0; j < nIn; j++)
+                        for (int h = 0; h < nH; h++) { vW1[j, h] = mom * vW1[j, h] - sc * gW1[j, h]; W1[j, h] += vW1[j, h]; }
+                    for (int h = 0; h < nH; h++)
+                    {
+                        vb1[h] = mom * vb1[h] - sc * gb1[h]; b1[h] += vb1[h];
+                        for (int k = 0; k < nOut; k++) { vW2[h, k] = mom * vW2[h, k] - sc * gW2[h, k]; W2[h, k] += vW2[h, k]; }
+                    }
+                    for (int k = 0; k < nOut; k++) { vb2[k] = mom * vb2[k] - sc * gb2[k]; b2[k] += vb2[k]; }
                 }
                 double loss = 0;
                 for (int i = 0; i < n; i++) { Forward(X[i], z1, a1, p); loss -= Math.Log(p[y[i]] + 1e-12); }
@@ -250,7 +274,7 @@ namespace lab2_perceptron
             int ok1 = 0; for (int i = 0; i < 4; i++) if (p.Predict(X[i]) == t[i]) ok1++;
             accNeuron = ok1 / 4.0;
             Mlp m = new Mlp(2, 8, 2, "tanh", rnd);
-            m.Fit(X, t, 3000, 0.5, 4, null, rnd);
+            m.Fit(X, t, 3000, 0.1, 4, null, rnd);
             int ok2 = 0; for (int i = 0; i < 4; i++) if (m.Predict(X[i]) == t[i]) ok2++;
             accMlp = ok2 / 4.0;
             h1 = p.History; h2 = m.History;
