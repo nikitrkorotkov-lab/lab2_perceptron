@@ -18,8 +18,8 @@ namespace lab2_perceptron
         LossForm lossForm;
         Random rnd = new Random(1);
 
-        Label lblInfo; TextBox tbW, tbH, tbThr, log; ProgressBar pb;
-        ComboBox cbClass, cbAct;
+        Label lblInfo; TextBox tbW, tbH, tbThr, log; CheckBox chkCrop; ProgressBar pb;
+        ComboBox cbClass;
         TextBox nEta, nEp, lEta, lEp, mEta, mEp, mHid;
         PictureBox pbN, pbL, pbM; Label resN, resL, resM;
         TabControl tabs;
@@ -47,10 +47,12 @@ namespace lab2_perceptron
             Btn(top, "Папка с изображениями...", 10, 20, 170, OpenFolder);
             Btn(top, "Загрузить CSV...", 185, 20, 120, OpenCsv);
             Btn(top, "Сохранить датасет в CSV", 310, 20, 160, SaveCsv);
-            Lbl(top, "Размер (Ш x В):", 490, 20);
-            tbW = Tb(top, "32", 585, 20, 35); tbH = Tb(top, "32", 625, 20, 35);
-            Lbl(top, "Порог (0 = авто, версия Оцу):", 680, 20);
-            tbThr = Tb(top, "0", 865, 20, 40);
+            Lbl(top, "Размер (Ш x В):", 480, 20);
+            tbW = Tb(top, "32", 575, 20, 35); tbH = Tb(top, "32", 615, 20, 35);
+            Lbl(top, "Порог яркости (0 = авто, Otsu):", 665, 20);
+            tbThr = Tb(top, "0", 845, 20, 40);
+            chkCrop = new CheckBox { Text = "Обрезать по объекту", Left = 900, Top = 22, AutoSize = true, Checked = true };
+            top.Controls.Add(chkCrop);
             Btn(top, "Создать файл случайных весов...", 10, 55, 210, MakeWeights);
             Btn(top, "Загрузить файл весов...", 225, 55, 170, PickWeights);
             lblInfo = new Label { Text = "Датасет не загружен", Left = 405, Top = 60, AutoSize = true };
@@ -78,12 +80,9 @@ namespace lab2_perceptron
             resL = new Label { Left = 10, Top = 100, AutoSize = true, Font = new Font("Arial", 14, FontStyle.Bold) }; t2.Controls.Add(resL);
             pbL = Pic(t2, 600, 10);
 
-            Lbl(t3, "Скорость обучения:", 10, 15); mEta = Tb(t3, "0.05", 160, 12, 60);
-            Lbl(t3, "Эпох:", 240, 15); mEp = Tb(t3, "200", 290, 12, 60);
-            Lbl(t3, "Нейронов в скрытом слое:", 10, 50); mHid = Tb(t3, "128", 190, 47, 60);
-            Lbl(t3, "Активация:", 270, 50);
-            cbAct = new ComboBox { Left = 345, Top = 47, Width = 80, DropDownStyle = ComboBoxStyle.DropDownList };
-            cbAct.Items.AddRange(new object[] { "tanh", "relu", "sigmoid" }); cbAct.SelectedIndex = 0; t3.Controls.Add(cbAct);
+            Lbl(t3, "Скорость обучения:", 10, 15); mEta = Tb(t3, "0.1", 160, 12, 60);
+            Lbl(t3, "Эпох:", 240, 15); mEp = Tb(t3, "300", 290, 12, 60);
+            Lbl(t3, "Нейронов в скрытом слое:", 10, 50); mHid = Tb(t3, "64", 190, 47, 60);
             Btn(t3, "Обучить MLP", 10, 85, 160, TrainMlp);
             Btn(t3, "Распознать изображение...", 180, 85, 190, (s, e) => CheckNet(true));
             resM = new Label { Left = 10, Top = 130, AutoSize = true, Font = new Font("Arial", 14, FontStyle.Bold) }; t3.Controls.Add(resM);
@@ -103,10 +102,12 @@ namespace lab2_perceptron
         static double D(TextBox t) { return double.Parse(t.Text.Trim().Replace(',', '.'), CultureInfo.InvariantCulture); }
         static int I(TextBox t) { return int.Parse(t.Text.Trim()); }
 
-        int Thr()
+        PrepOptions Prep()
         {
-            int v;
-            return int.TryParse(tbThr.Text.Trim(), out v) && v > 0 ? v : 0;
+            int thr = 0;
+            int.TryParse(tbThr.Text.Trim(), out thr);
+            if (thr < 0 || thr > 254) thr = 0;
+            return new PrepOptions { Threshold = thr, Crop = chkCrop.Checked };
         }
 
         bool NeedData()
@@ -134,7 +135,7 @@ namespace lab2_perceptron
             using (FolderBrowserDialog d = new FolderBrowserDialog { Description = "Папка датасета (каждая подпапка - класс)" })
             {
                 if (d.ShowDialog() != DialogResult.OK) return;
-                try { Cursor = Cursors.WaitCursor; SetData(DataSet.LoadFolder(d.SelectedPath, I(tbW), I(tbH), Thr())); }
+                try { Cursor = Cursors.WaitCursor; SetData(DataSet.LoadFolder(d.SelectedPath, I(tbW), I(tbH), Prep())); }
                 catch (Exception ex) { Fail(ex); }
                 finally { Cursor = Cursors.Default; }
             }
@@ -216,7 +217,7 @@ namespace lab2_perceptron
             using (OpenFileDialog d = new OpenFileDialog { Filter = "Изображения|*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.tif" })
             {
                 if (d.ShowDialog() != DialogResult.OK) return null;
-                return DataSet.ImageToVector(d.FileName, ds.Width, ds.Height, Thr());
+                return DataSet.ImageToVector(d.FileName, ds.Width, ds.Height, Prep());
             }
         }
 
@@ -244,7 +245,7 @@ namespace lab2_perceptron
             catch (Exception ex) { Fail(ex); Busy(false); return; }
             Busy(false);
             ShowLoss(new Dictionary<string, List<double>> { { "Нейрон \"" + ds.Names[c] + "\"", nn.History } });
-            Log("Нейрон \"" + ds.Names[c] + "\" обучен за " + nn.History.Count + " эп., loss=" + nn.History.Last().ToString("F4"));
+            Log("Нейрон \"" + ds.Names[c] + "\" обучен за " + (nn.History.Count - 1) + " эп., loss: " + nn.History.First().ToString("F4") + " -> " + nn.History.Last().ToString("F4"));
             string[] titles = { "обучающая", "тестовая" };
             int[][] sets = { tr, te };
             for (int q = 0; q < 2; q++)
@@ -281,8 +282,8 @@ namespace lab2_perceptron
             try { await Task.Run(() => net.Fit(Xtr, ytr, ep, eta, (i, l) => Progress(i, ep), rnd)); }
             catch (Exception ex) { Fail(ex); Busy(false); return; }
             Busy(false);
-            ShowLoss(new Dictionary<string, List<double>> { { "Однослойная сеть (MSE)", net.History } });
-            Log("Слой обучен за " + net.History.Count + " эп., loss=" + net.History.Last().ToString("F4"));
+            ShowLoss(new Dictionary<string, List<double>> { { "Однослойная сеть", net.History } });
+            Log("Слой обучен за " + (net.History.Count - 1) + " эп., loss: " + net.History.First().ToString("F4") + " -> " + net.History.Last().ToString("F4"));
             double mt; Log(ReportBoth("Однослойная сеть", net.PredictAll, out mt));
         }
 
@@ -298,7 +299,7 @@ namespace lab2_perceptron
             if (!NeedData()) return;
             double eta; int ep, hid;
             try { eta = D(mEta); ep = I(mEp); hid = I(mHid); } catch { MessageBox.Show("Некорректные параметры."); return; }
-            mlp = new Mlp(ds.Features, hid, ds.Names.Count, cbAct.SelectedItem.ToString(), rnd);
+            mlp = new Mlp(ds.Features, hid, ds.Names.Count, rnd);
             double[][] Xtr = ds.Sub(tr); int[] ytr = ds.SubY(tr);
             Mlp m = mlp;
             Busy(true);
@@ -306,9 +307,9 @@ namespace lab2_perceptron
             catch (Exception ex) { Fail(ex); Busy(false); return; }
             Busy(false);
             ShowLoss(new Dictionary<string, List<double>> { { "MLP (cross-entropy)", m.History } });
-            Log("MLP обучен, loss=" + m.History.Last().ToString("F4"));
+            Log("MLP обучен, loss: " + m.History.First().ToString("F4") + " -> " + m.History.Last().ToString("F4"));
             double mt; Log(ReportBoth("MLP", m.PredictAll, out mt));
-            Log("Требование Accuracy >= 0.95 для каждого класса (тест): " + (mt >= 0.95 ? "ВЫПОЛНЕНО" : "НЕ выполнено - увеличьте число нейронов/эпох"));
+            Log("Требование Accuracy >= 0.95 для каждого класса (тест): " + (mt >= 0.95 ? "ВЫПОЛНЕНО" : "НЕ выполнено - увеличьте число нейронов/эпох или размер изображения"));
         }
 
         void CheckNet(bool isMlp)
@@ -327,7 +328,7 @@ namespace lab2_perceptron
             double a1, a2; List<double> h1, h2;
             XorDemo.Run(out a1, out a2, out h1, out h2);
             Log("XOR: один нейрон Accuracy=" + a1.ToString("F2") + " (максимум 0.75), MLP Accuracy=" + a2.ToString("F2"));
-            ShowLoss(new Dictionary<string, List<double>> { { "Нейрон (MSE)", h1 }, { "MLP (cross-entropy)", h2 } });
+            ShowLoss(new Dictionary<string, List<double>> { { "Нейрон", h1 }, { "MLP (cross-entropy)", h2 } });
         }
     }
 }

@@ -8,6 +8,7 @@ using System.Windows.Forms;
 namespace lab2_perceptron
 {
     // Отдельная форма с графиком loss-функции и сохранением в файл.
+    // Точка с индексом k - значение loss после k-й эпохи (k = 0 - до обучения).
     public class LossForm : Form
     {
         Panel chart; Button btnSave;
@@ -48,7 +49,7 @@ namespace lab2_perceptron
                 g.DrawString("Изменение loss-функции в ходе обучения", fb, Brushes.Black, L, 8);
                 g.DrawRectangle(Pens.Black, pr);
                 if (curves.Count == 0) return;
-                int maxEp = Math.Max(2, curves.Values.Max(v => v.Count));
+                int maxPts = Math.Max(2, curves.Values.Max(v => v.Count));
                 double maxV = curves.Values.SelectMany(v => v).DefaultIfEmpty(1).Max();
                 if (maxV <= 0) maxV = 1;
                 for (int i = 0; i <= 5; i++)
@@ -58,7 +59,7 @@ namespace lab2_perceptron
                     g.DrawString((maxV * i / 5).ToString("0.###"), f, Brushes.Black, 4, y - 7);
                     int x = pr.Left + i * pr.Width / 5;
                     g.DrawLine(Pens.Black, x, pr.Bottom, x, pr.Bottom + 4);
-                    g.DrawString(((int)Math.Round(1 + (maxEp - 1) * i / 5.0)).ToString(), f, Brushes.Black, x - 8, pr.Bottom + 6);
+                    g.DrawString(((int)Math.Round((maxPts - 1) * i / 5.0)).ToString(), f, Brushes.Black, x - 8, pr.Bottom + 6);
                 }
                 g.DrawString("Эпоха", f, Brushes.Black, pr.Left + pr.Width / 2 - 15, pr.Bottom + 26);
                 g.DrawString("Loss", f, Brushes.Black, 8, 22);
@@ -71,7 +72,7 @@ namespace lab2_perceptron
                     {
                         PointF[] pts = new PointF[v.Count];
                         for (int i = 0; i < v.Count; i++)
-                            pts[i] = new PointF(pr.Left + (float)((double)i / (maxEp - 1) * pr.Width),
+                            pts[i] = new PointF(pr.Left + (float)((double)i / (maxPts - 1) * pr.Width),
                                                 pr.Bottom - (float)(v[i] / maxV * pr.Height));
                         using (Pen p = new Pen(col, 2)) g.DrawLines(p, pts);
                     }
